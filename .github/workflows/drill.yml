@@ -1,0 +1,34 @@
+name: Recovery drill
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements.txt
+      - name: Run the drill ten times
+        shell: bash
+        run: |
+          for attempt in {1..10}; do
+            python run_drill.py orchestrator.yaml > "${RUNNER_TEMP}/proof.json"
+            printf 'Run %s passed\n' "$attempt"
+          done
+          {
+            printf '%s\n' '### Inventory recovery drill: 10/10 passed' '' '```json'
+            cat "${RUNNER_TEMP}/proof.json"
+            printf '%s\n' '```'
+          } >> "$GITHUB_STEP_SUMMARY"
