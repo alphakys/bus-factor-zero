@@ -2,6 +2,7 @@
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 import json
 from pathlib import Path
 import sqlite3
@@ -15,12 +16,18 @@ import yaml
 ROOT = Path(__file__).resolve().parent
 
 
-def read_database(database, initial_stock):
-    with sqlite3.connect(database) as db:
-        stock = db.execute("SELECT stock FROM inventory").fetchone()[0]
-        order_ids = [
-            row[0] for row in db.execute("SELECT order_id FROM reservations ORDER BY order_id")
-        ]
+def initialize_database(database, initial_stock):
+    with closing(sqlite3.connect(database)) as db, db:
+        db.execute("CREATE TABLE inventory (stock INTEGER NOT NULL CHECK (stock >= 0))")
+        db.execute("CREATE TABLE reservations (order_id TEXT PRIMARY KEY NOT NULL)")
+        db.execute("INSERT INTO inventory VALUES (?)", (initial_stock,))
+
+
+def read_inventory(db, initial_stock):
+    stock = db.execute("SELECT stock FROM inventory").fetchone()[0]
+    order_ids = [
+        row[0] for row in db.execute("SELECT order_id FROM reservations ORDER BY order_id")
+    ]
     return {
         "reservations": len(order_ids),
         "stock": stock,
@@ -29,18 +36,23 @@ def read_database(database, initial_stock):
     }
 
 
+def read_database(database, initial_stock):
+    with closing(sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+        return read_inventory(db, initial_stock)
+
+
+def run_worker(database, mode, orders):
+    command = [sys.executable, str(ROOT / "worker.py"), str(database), mode, *orders]
+    subprocess.run(command, check=True, timeout=15)
+
+
 def run_case(name, case, config):
     initial_stock = config["initial_stock"]
     orders = config["concurrent_orders"]
     with TemporaryDirectory(prefix=f"bfz-{name}-") as directory:
         database = Path(directory) / "orders.sqlite"
-        with sqlite3.connect(database) as db:
-            db.execute("CREATE TABLE inventory (stock INTEGER NOT NULL CHECK (stock >= 0))")
-            db.execute("CREATE TABLE reservations (order_id TEXT PRIMARY KEY NOT NULL)")
-            db.execute("INSERT INTO inventory VALUES (?)", (initial_stock,))
-
-        worker = [sys.executable, str(ROOT / "worker.py"), str(database), case["worker"]]
-        subprocess.run([*worker, *orders], check=True, timeout=15)
+        initialize_database(database, initial_stock)
+        run_worker(database, case["worker"], orders)
         observed = read_database(database, initial_stock)
         matches = all(
             observed[key] == case["expect"][key]
@@ -52,7 +64,7 @@ def run_case(name, case, config):
             valid_winner = matches and len(observed["order_ids"]) == 1
             if valid_winner:
                 winner = observed["order_ids"][0]
-                subprocess.run([*worker, winner], check=True, timeout=15)
+                run_worker(database, case["worker"], [winner])
                 result["after_replay"] = read_database(database, initial_stock)
             result["replay_unchanged"] = valid_winner and result["after_replay"] == observed
         return result
