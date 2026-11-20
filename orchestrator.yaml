@@ -1,0 +1,11 @@
+scenario: last-item-reservation
+initial_stock: 1
+concurrent_orders: [order-a, order-b]
+runs:
+  baseline:
+    worker: stale-read
+    expect: {reservations: 2, stock: 0, inventory_balanced: false}
+  candidate:
+    worker: atomic
+    expect: {reservations: 1, stock: 0, inventory_balanced: true}
+    replay_winning_order: true

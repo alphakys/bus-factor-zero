@@ -1,0 +1,37 @@
+{
+  "scenario": "last-item-reservation",
+  "environment": "local SQLite fixture",
+  "passed": true,
+  "baseline": {
+    "observed": {
+      "reservations": 2,
+      "stock": 0,
+      "inventory_balanced": false,
+      "order_ids": [
+        "order-a",
+        "order-b"
+      ]
+    },
+    "matched_expected": true
+  },
+  "candidate": {
+    "observed": {
+      "reservations": 1,
+      "stock": 0,
+      "inventory_balanced": true,
+      "order_ids": [
+        "order-b"
+      ]
+    },
+    "matched_expected": true,
+    "after_replay": {
+      "reservations": 1,
+      "stock": 0,
+      "inventory_balanced": true,
+      "order_ids": [
+        "order-b"
+      ]
+    },
+    "replay_unchanged": true
+  }
+}
